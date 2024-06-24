@@ -28,7 +28,7 @@ async fn start_websocket_server() {
     }
 }
 
-async fn handle_client_raw_message(msg: Cow<'_, str>) -> Result<(), Error> {
+async fn handle_client_raw_message(msg: Cow<'_, str>) -> Result<Value, Error> {
     let url: String = String::from(format!("ws://{}", PROXY_IP_PORT));
 
     let client = WsClientBuilder::new().build(url).await.unwrap();
@@ -53,18 +53,29 @@ async fn handle_client_raw_message(msg: Cow<'_, str>) -> Result<(), Error> {
 
     let answer = client.request(method, rpc_params![]).await?;
     println!("Response: {:?}", answer);*/
+    let msg: Value = serde_json::from_str(&msg).unwrap();
 
-    let response: serde_json::Value = client
-        .request("say_hello", jsonrpsee::rpc_params![])
+    let method_str = String::from("method");
+    let method = msg.get(method_str)
+        .and_then(Value::as_str)
+        .ok_or_else(|| "error")?;
+
+    let array = msg.get("params").unwrap();
+    //let params: Vec<_> = array.iter().filter_map(|x| x.as_ref()).map(|x| &x.0).collect();
+    /*let params: Vec<_> = array.as_array().unwrap().iter().map(|x| {
+        match x {
+            Value::Number(x) => x.as_u64().unwrap(),
+            _ => x.clone(),
+        }
+    }).collect();*/
+    //println!("Params: {:?}", params);
+    let params: Params = Params::Array(array.as_array().unwrap().to_vec());
+    let response: Value = client
+        .request(method, rpc_params!())
         .await?;
-    println!("say_hello response (for no params): {}", response);
+    println!("Response for \"{}\" method: {}", method, response);
 
-    let response: serde_json::Value = client
-        .request("add_i32", jsonrpsee::rpc_params![9, 1])
-        .await?;
-    println!("add response (for 9+1): {}", response);
-
-    Ok(())
+    Ok(response)
 }
 
 async fn handle_connection(stream: tokio::net::TcpStream) {
@@ -101,7 +112,7 @@ async fn handle_connection(stream: tokio::net::TcpStream) {
     noise.read_message(&msg.into_data(), &mut buf).unwrap();
 
     let mut noise = noise.into_transport_mode().unwrap();
-    let mut stop = false;
+    let stop = false;
 
     while !stop {
         if let Some(msg) = read.next().await {
@@ -112,18 +123,9 @@ async fn handle_connection(stream: tokio::net::TcpStream) {
             let answer = handle_client_raw_message(msg).await.unwrap();
             //let answer = "answer";
             println!("Answer: {:?}", answer);
-            match answer {
-                (str) => {
-                    let len = noise.write_message("answer".as_bytes(), &mut buf).unwrap();
-                    write.send(Message::binary(&buf[..len])).await.unwrap();
-                    println!("Answer sent.");
-                }
-                _ => {
-                    let len = noise.write_message("error".as_bytes(), &mut buf).unwrap();
-                    write.send(Message::binary(&buf[..len])).await.unwrap();
-                    println!("Error sent.");
-                }
-            }
+            let len = noise.write_message("answer".as_bytes(), &mut buf).unwrap();
+            write.send(Message::binary(&buf[..len])).await.unwrap();
+            println!("Answer sent.");
         }
     }
     println!("Connection closed.");
