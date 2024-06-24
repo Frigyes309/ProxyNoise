@@ -40,7 +40,7 @@ async fn handle_client_raw_message(msg: Cow<'_, str>) -> Result<(), Error> {
             "failed"
         }
     );
-    let msg: Value = serde_json::from_str(&msg).unwrap();
+    /*let msg: Value = serde_json::from_str(&msg).unwrap();
     let method_str = String::from("method");
     let method = msg.get(method_str)
         .and_then(Value::as_str)
@@ -52,7 +52,17 @@ async fn handle_client_raw_message(msg: Cow<'_, str>) -> Result<(), Error> {
     //println!("Params: {:?}", params);
 
     let answer = client.request(method, rpc_params![]).await?;
-    println!("Response: {:?}", answer);
+    println!("Response: {:?}", answer);*/
+
+    let response: serde_json::Value = client
+        .request("say_hello", jsonrpsee::rpc_params![])
+        .await?;
+    println!("say_hello response (for no params): {}", response);
+
+    let response: serde_json::Value = client
+        .request("add_i32", jsonrpsee::rpc_params![9, 1])
+        .await?;
+    println!("add response (for 9+1): {}", response);
 
     Ok(())
 }
@@ -99,8 +109,8 @@ async fn handle_connection(stream: tokio::net::TcpStream) {
             let len = noise.read_message(&msg.into_data(), &mut buf).unwrap();
             let msg = String::from_utf8_lossy(&buf[..len]);
             println!("Client said: {}", msg);
-            //let answer = handle_client_raw_message(msg).await.unwrap();
-            let answer = "answer";
+            let answer = handle_client_raw_message(msg).await.unwrap();
+            //let answer = "answer";
             println!("Answer: {:?}", answer);
             match answer {
                 (str) => {
