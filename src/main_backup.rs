@@ -129,7 +129,6 @@ async fn handle_connection(stream: tokio::net::TcpStream) {
             //stop = stop2;
             let len = noise.write_message("answer".as_bytes(), &mut buf.clone()).unwrap();
             write.send(Message::binary(&buf[..len])).await.unwrap();
-            thread::sleep(Duration::from_secs(10));
             stop = true;
         }
     }

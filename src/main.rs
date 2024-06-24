@@ -6,8 +6,14 @@ use tokio::net::TcpListener;
 use tokio_tungstenite::tungstenite::protocol::Message;
 use tokio_tungstenite::{accept_async, connect_async};
 use std::borrow::Cow;
+use jsonrpsee::{core::{client::ClientT}, rpc_params, ws_client::WsClientBuilder};
+use jsonrpsee::types::Params;
+use serde_json::{Value};
 
-const IP_PORT: &str = "127.0.0.1:9999";
+pub type Error =  Box<dyn std::error::Error>;
+
+const IP_PORT: &str = "127.0.0.1:3030";
+const PROXY_IP_PORT: &str = "127.0.0.1:9999";
 lazy_static! {
     static ref NOISE_PARAMS: NoiseParams = "Noise_XXpsk3_25519_ChaChaPoly_BLAKE2s".parse().unwrap();
     static ref SECRET: [u8; 32] = *b"Random 32 characters long secret";
@@ -22,68 +28,33 @@ async fn start_websocket_server() {
     }
 }
 
-fn handle_client_raw_message(msg: Cow<str>, buf: Vec<u8>, mut stop: bool) -> (Vec<u8>, bool) {
-    /*let mut str_real_len = String::new();
-    let mut chars_iter = msg.chars().peekable();
-    let mut start_len = 0;
-    while let Some(c) = chars_iter.next() {
-        if c == 's' {
-            break;
+async fn handle_client_raw_message(msg: Cow<'_, str>) -> Result<(), Error> {
+    let url: String = String::from(format!("ws://{}", PROXY_IP_PORT));
+
+    let client = WsClientBuilder::new().build(url).await.unwrap();
+    println!(
+        "Connection to proxy {}",
+        if client.is_connected() {
+            "was successful"
+        } else {
+            "failed"
         }
-        start_len += 1;
-        str_real_len.push(c);
-    }
-    start_len += 1;
-    let real_len = str_real_len.parse::<usize>().unwrap() + start_len;
-    let mut answer: Vec<u8> = Vec::new();
-    if String::from_utf8_lossy(&buf[start_len..real_len]).eq("exit") {
-        for c in "exit".bytes() {
-            answer.push(c);
-        }
-        stop = true;
-    } else {
-        for i in String::from_utf8_lossy(&buf[start_len..real_len]).chars() {
-            let mut c = i as char;
-            match c {
-                '1' => { c = '0'; }
-                '0' => { c = '1'; }
-                _ => {
-                    if c.is_uppercase() {
-                        c = c.to_lowercase().next().unwrap();
-                    } else {
-                        c = c.to_uppercase().next().unwrap();
-                    }
-                }
-            }
-            answer.push(c as u8);
-        }
-    }
-    (answer, stop)*/
-    let mut answer: Vec<u8> = Vec::new();
-    let mut stop = false;
-    if msg.eq("exit") {
-        for c in "exit".bytes() {
-            answer.push(c);
-        }
-        stop = true;
-    } else {
-        for i in msg.chars() {
-            let mut c = i;
-            match c {
-                '1' => { c = '0'; }
-                '0' => { c = '1'; }
-                _ => {
-                    if c.is_uppercase() {
-                        c = c.to_lowercase().next().unwrap();
-                    } else {
-                        c = c.to_uppercase().next().unwrap();
-                    }
-                }
-            }
-            answer.push(c as u8);
-        }
-    }
-    (answer, stop)
+    );
+    let msg: Value = serde_json::from_str(&msg).unwrap();
+    let method_str = String::from("method");
+    let method = msg.get(method_str)
+        .and_then(Value::as_str)
+        .ok_or_else(|| "error")?;
+    //let params: Params = Params::sequence(msg.get("params").and_then(Value::as_array)?);
+    //let params: Params = Params::Array(msg.get("params").and_then(Value::as_array).unwrap().to_vec());
+
+    println!("Method: {}", method);
+    //println!("Params: {:?}", params);
+
+    let answer = client.request(method, rpc_params![]).await?;
+    println!("Response: {:?}", answer);
+
+    Ok(())
 }
 
 async fn handle_connection(stream: tokio::net::TcpStream) {
@@ -128,10 +99,21 @@ async fn handle_connection(stream: tokio::net::TcpStream) {
             let len = noise.read_message(&msg.into_data(), &mut buf).unwrap();
             let msg = String::from_utf8_lossy(&buf[..len]);
             println!("Client said: {}", msg);
-            let (answer, stop2) = handle_client_raw_message(msg, buf.clone(), stop);
-            stop = stop2;
-            let len = noise.write_message(&answer, &mut buf).unwrap();
-            write.send(Message::binary(&buf[..len])).await.unwrap();
+            //let answer = handle_client_raw_message(msg).await.unwrap();
+            let answer = "answer";
+            println!("Answer: {:?}", answer);
+            match answer {
+                (str) => {
+                    let len = noise.write_message("answer".as_bytes(), &mut buf).unwrap();
+                    write.send(Message::binary(&buf[..len])).await.unwrap();
+                    println!("Answer sent.");
+                }
+                _ => {
+                    let len = noise.write_message("error".as_bytes(), &mut buf).unwrap();
+                    write.send(Message::binary(&buf[..len])).await.unwrap();
+                    println!("Error sent.");
+                }
+            }
         }
     }
     println!("Connection closed.");
@@ -179,25 +161,26 @@ async fn start_websocket_client() {
     println!("Message sent.");
 
     loop {
-        let msg = read.next().await.unwrap().unwrap();
-        let len = noise.read_message(&msg.into_data(), &mut buf).unwrap();
-        if String::from_utf8_lossy(&buf[..len]).eq("exit") {
-            break;
+        if let Some(msg) = read.next().await {
+            let msg = msg.unwrap();
+            let len = noise.read_message(&msg.into_data(), &mut buf).unwrap();
+            if String::from_utf8_lossy(&buf[..len]).eq("exit") {
+                break;
+            }
+            println!("Server said: {}", String::from_utf8_lossy(&buf[..len]));
+
+            let msg = payload_generator();
+            let len = noise.write_message(&(msg.as_bytes()), &mut buf).unwrap();
+            write.send(Message::binary(&buf[..len])).await.unwrap();
+            println!("Message sent.");
         }
-        println!("Server said: {}", String::from_utf8_lossy(&buf[..len]));
-
-
-        let msg = payload_generator();
-        let len = noise.write_message(&(msg.as_bytes()), &mut buf).unwrap();
-        write.send(Message::binary(&buf[..len])).await.unwrap();
-        println!("Message sent.");
     }
     println!("Connection closed.");
 }
 
 fn payload_generator() -> String {
     let mut payload = String::new();
-    println!("Enter the payload: ");
+    println!("Enter the payload (as a json): ");
     std::io::stdin().read_line(&mut payload).expect("Failed to read line");
     //let payload = format!("{}s{}", payload.trim().len(), payload);
     payload.trim().to_string()
