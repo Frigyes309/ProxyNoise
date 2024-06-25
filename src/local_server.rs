@@ -1,4 +1,3 @@
-use std::{borrow::Cow, sync::Arc};
 use futures_util::{SinkExt, StreamExt};
 use jsonrpsee::{
     core::{client::ClientT, RpcResult},
@@ -10,9 +9,8 @@ use jsonrpsee::{
 };
 use lazy_static::lazy_static;
 use serde_json::Value;
-use tokio::{
-    net::{TcpListener, TcpStream},
-};
+use std::{borrow::Cow, sync::Arc};
+use tokio::net::{TcpListener, TcpStream};
 use tokio_tungstenite::{accept_async, tungstenite::protocol::Message};
 
 pub type Error = Box<dyn std::error::Error>;
@@ -83,7 +81,8 @@ pub async fn run_client(ip_port: &str, msg: Cow<'_, str>) -> Result<(String, Str
     );
 
     let msg_json: Value = serde_json::from_str(&msg)?;
-    let method = msg_json.get("method")
+    let method = msg_json
+        .get("method")
         .and_then(Value::as_str)
         .ok_or("error")?;
     let id = msg_json.get("id").ok_or("error")?.to_string();
@@ -102,7 +101,9 @@ pub async fn run_client(ip_port: &str, msg: Cow<'_, str>) -> Result<(String, Str
             Ok((response.to_string(), id))
         }
         "say_hello" => {
-            let response: Value = client.request("say_hello", jsonrpsee::rpc_params![]).await?;
+            let response: Value = client
+                .request("say_hello", jsonrpsee::rpc_params![])
+                .await?;
             println!("say_hello response: {}", response);
             Ok((response.to_string(), id))
         }
@@ -111,4 +112,3 @@ pub async fn run_client(ip_port: &str, msg: Cow<'_, str>) -> Result<(String, Str
 
     Ok(answer)
 }
-

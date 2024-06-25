@@ -25,52 +25,6 @@ async fn start_websocket_server() {
     }
 }
 
-/*async fn handle_client_raw_message(msg: Cow<'_, str>) -> Result<Value, Error> {
-    /*let url: String = String::from(format!("ws://{}", PROXY_IP_PORT));
-
-    let client = WsClientBuilder::new().build(url).await.unwrap();
-    println!(
-        "Connection to proxy {}",
-        if client.is_connected() {
-            "was successful"
-        } else {
-            "failed"
-        }
-    );
-    /*let msg: Value = serde_json::from_str(&msg).unwrap();
-    let method_str = String::from("method");
-    let method = msg.get(method_str)
-        .and_then(Value::as_str)
-        .ok_or_else(|| "error")?;
-    //let params: Params = Params::sequence(msg.get("params").and_then(Value::as_array)?);
-    //let params: Params = Params::Array(msg.get("params").and_then(Value::as_array).unwrap().to_vec());
-
-    println!("Method: {}", method);
-    //println!("Params: {:?}", params);
-
-    let answer = client.request(method, rpc_params![]).await?;
-    println!("Response: {:?}", answer);*/
-    let msg: Value = serde_json::from_str(&msg).unwrap();
-
-    let method_str = String::from("method");
-    let method = msg.get(method_str)
-        .and_then(Value::as_str)
-        .ok_or_else(|| "error")?;
-
-    let array = msg.get("params").unwrap();
-
-    let response = client.add_i32(1, 2);
-
-    let response: Value = client
-        .request(method, rpc_params!(1, 2))
-        .await?;
-    println!("Response for \"{}\" method: {}", method, response);*/
-
-    let response = local_server::run_client(PROXY_IP_PORT, msg).await;
-
-    response
-}*/
-
 fn create_json(response: String, msg_id: &str) -> String {
     let mut json = String::new();
     json.push_str("{");
@@ -199,14 +153,11 @@ fn payload_generator() -> String {
     std::io::stdin()
         .read_line(&mut payload)
         .expect("Failed to read line");
-    //let payload = format!("{}s{}", payload.trim().len(), payload);
     payload.trim().to_string()
 }
 
 #[tokio::main]
 async fn main() {
-    //If start has been called with s as argument, the server mode will be started
-    //If start has been called with c as argument, the client mode will be started
     #[allow(unused_assignments)]
     let mut server_mode: u8 = 0;
     if std::env::args().len() > 1 {
