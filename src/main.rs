@@ -157,8 +157,7 @@ fn payload_generator() -> String {
 
 #[tokio::main]
 async fn main() {
-    #[allow(unused_assignments)]
-    let mut server_mode: u8 = 0;
+    let server_mode: u8;
     if std::env::args().len() > 1 {
         server_mode = std::env::args().next_back().map_or(0, |arg| {
             if arg == "-s" || arg == "--server" {
