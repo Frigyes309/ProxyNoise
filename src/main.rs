@@ -1,16 +1,13 @@
-use futures_util::{SinkExt, StreamExt};
-#[allow(unused_imports)]
-use lazy_static::lazy_static;
-use snow::{Builder, params::NoiseParams};
-use tokio::net::TcpListener;
-use tokio_tungstenite::tungstenite::protocol::Message;
-use tokio_tungstenite::{accept_async, connect_async};
-use std::borrow::Cow;
-use jsonrpsee::{core::{client::ClientT}, rpc_params, ws_client::WsClientBuilder};
-use jsonrpsee::types::Params;
-use serde_json::{Value};
+mod local_server;
 
-pub type Error =  Box<dyn std::error::Error>;
+use futures_util::{SinkExt, StreamExt};
+use jsonrpsee::core::client::ClientT;
+use lazy_static::lazy_static;
+use snow::{params::NoiseParams, Builder};
+use tokio::net::TcpListener;
+use tokio_tungstenite::{accept_async, connect_async, tungstenite::protocol::Message};
+
+pub type Error = Box<dyn std::error::Error>;
 
 const IP_PORT: &str = "127.0.0.1:3030";
 const PROXY_IP_PORT: &str = "127.0.0.1:9999";
@@ -28,8 +25,8 @@ async fn start_websocket_server() {
     }
 }
 
-async fn handle_client_raw_message(msg: Cow<'_, str>) -> Result<Value, Error> {
-    let url: String = String::from(format!("ws://{}", PROXY_IP_PORT));
+/*async fn handle_client_raw_message(msg: Cow<'_, str>) -> Result<Value, Error> {
+    /*let url: String = String::from(format!("ws://{}", PROXY_IP_PORT));
 
     let client = WsClientBuilder::new().build(url).await.unwrap();
     println!(
@@ -61,21 +58,30 @@ async fn handle_client_raw_message(msg: Cow<'_, str>) -> Result<Value, Error> {
         .ok_or_else(|| "error")?;
 
     let array = msg.get("params").unwrap();
-    //let params: Vec<_> = array.iter().filter_map(|x| x.as_ref()).map(|x| &x.0).collect();
-    /*let params: Vec<_> = array.as_array().unwrap().iter().map(|x| {
-        match x {
-            Value::Number(x) => x.as_u64().unwrap(),
-            _ => x.clone(),
-        }
-    }).collect();*/
-    //println!("Params: {:?}", params);
-    let params: Params = Params::Array(array.as_array().unwrap().to_vec());
-    let response: Value = client
-        .request(method, rpc_params!())
-        .await?;
-    println!("Response for \"{}\" method: {}", method, response);
 
-    Ok(response)
+    let response = client.add_i32(1, 2);
+
+    let response: Value = client
+        .request(method, rpc_params!(1, 2))
+        .await?;
+    println!("Response for \"{}\" method: {}", method, response);*/
+
+    let response = local_server::run_client(PROXY_IP_PORT, msg).await;
+
+    response
+}*/
+
+fn create_json(response: String, msg_id: &str) -> String {
+    let mut json = String::new();
+    json.push_str("{");
+    json.push_str("\"jsonrpc\": \"2.0\", ");
+    json.push_str("\"result\": ");
+    json.push_str(&response);
+    json.push_str(", ");
+    json.push_str("\"id\": ");
+    json.push_str(msg_id);
+    json.push_str("}");
+    json
 }
 
 async fn handle_connection(stream: tokio::net::TcpStream) {
@@ -119,11 +125,10 @@ async fn handle_connection(stream: tokio::net::TcpStream) {
             let msg = msg.unwrap();
             let len = noise.read_message(&msg.into_data(), &mut buf).unwrap();
             let msg = String::from_utf8_lossy(&buf[..len]);
-            println!("Client said: {}", msg);
-            let answer = handle_client_raw_message(msg).await.unwrap();
-            //let answer = "answer";
-            println!("Answer: {:?}", answer);
-            let len = noise.write_message("answer".as_bytes(), &mut buf).unwrap();
+            let (response, msg_id) = local_server::run_client(PROXY_IP_PORT, msg).await.unwrap();
+            println!("MsgId: {:?}", msg_id);
+            let response = create_json(response, &msg_id);
+            let len = noise.write_message(response.as_bytes(), &mut buf).unwrap();
             write.send(Message::binary(&buf[..len])).await.unwrap();
             println!("Answer sent.");
         }
@@ -170,7 +175,6 @@ async fn start_websocket_client() {
     let msg = payload_generator();
     let len = noise.write_message(&(msg.as_bytes()), &mut buf).unwrap();
     write.send(Message::binary(&buf[..len])).await.unwrap();
-    println!("Message sent.");
 
     loop {
         if let Some(msg) = read.next().await {
@@ -184,7 +188,6 @@ async fn start_websocket_client() {
             let msg = payload_generator();
             let len = noise.write_message(&(msg.as_bytes()), &mut buf).unwrap();
             write.send(Message::binary(&buf[..len])).await.unwrap();
-            println!("Message sent.");
         }
     }
     println!("Connection closed.");
@@ -193,7 +196,9 @@ async fn start_websocket_client() {
 fn payload_generator() -> String {
     let mut payload = String::new();
     println!("Enter the payload (as a json): ");
-    std::io::stdin().read_line(&mut payload).expect("Failed to read line");
+    std::io::stdin()
+        .read_line(&mut payload)
+        .expect("Failed to read line");
     //let payload = format!("{}s{}", payload.trim().len(), payload);
     payload.trim().to_string()
 }
@@ -203,20 +208,46 @@ async fn main() {
     //If start has been called with s as argument, the server mode will be started
     //If start has been called with c as argument, the client mode will be started
     #[allow(unused_assignments)]
-        let mut server_mode: bool = false;
+    let mut server_mode: u8 = 0;
     if std::env::args().len() > 1 {
-        server_mode = std::env::args().next_back().map_or(true, |arg| arg == "-s" || arg == "--server")
+        server_mode = std::env::args().next_back().map_or(0, |arg| {
+            if arg == "-s" || arg == "--server" {
+                0
+            } else if arg == "-p" || arg == "--proxy" {
+                1
+            } else if arg == "-c" || arg == "--client" {
+                2
+            } else {
+                4
+            }
+        });
     } else {
-        println!("Mode? [s = server]");
+        println!("Mode? [s = server] [p = proxy] [c = client] [default = invalid]");
         let mut input = String::new();
-        std::io::stdin().read_line(&mut input).expect("Failed to read line");
-        server_mode = 's' == input.trim().chars().next().unwrap();
+        std::io::stdin()
+            .read_line(&mut input)
+            .expect("Failed to read line");
+        server_mode = if 's' == input.trim().chars().next().unwrap() {
+            0
+        } else if 'p' == input.trim().chars().next().unwrap() {
+            1
+        } else if 'c' == input.trim().chars().next().unwrap() {
+            2
+        } else {
+            4
+        };
     }
-    if server_mode {
+    if server_mode == 0 {
         println!("Server mode");
         start_websocket_server().await;
-    } else {
+    } else if server_mode == 1 {
+        println!("Proxy mode");
+        let _ = local_server::run_server().await;
+        println!("Proxy mo2de");
+    } else if server_mode == 2 {
         println!("Client mode");
         start_websocket_client().await;
+    } else {
+        println!("Invalid mode");
     }
 }
