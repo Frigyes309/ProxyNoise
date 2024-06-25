@@ -1,7 +1,6 @@
 mod local_server;
 
 use futures_util::{SinkExt, StreamExt};
-use jsonrpsee::core::client::ClientT;
 use lazy_static::lazy_static;
 use snow::{params::NoiseParams, Builder};
 use tokio::net::TcpListener;
@@ -12,7 +11,7 @@ pub type Error = Box<dyn std::error::Error>;
 const IP_PORT: &str = "127.0.0.1:3030";
 const PROXY_IP_PORT: &str = "127.0.0.1:9999";
 lazy_static! {
-    static ref NOISE_PARAMS: NoiseParams = "Noise_XXpsk3_25519_ChaChaPoly_BLAKE2s".parse().unwrap();
+    static ref NOISE_PARAMS: NoiseParams = "Noise_XXpsk3_25519_ChaChaPoly_BLAKE2s".parse().unwrap(); //Might have to change to XK
     static ref SECRET: [u8; 32] = *b"Random 32 characters long secret";
 }
 

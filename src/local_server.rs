@@ -1,17 +1,11 @@
-use futures_util::{SinkExt, StreamExt};
 use jsonrpsee::{
     core::{client::ClientT, RpcResult},
     proc_macros::rpc,
-    server::{Server, ServerBuilder},
-    types::{ErrorCode, Params},
+    server::{ServerBuilder},
     ws_client::WsClientBuilder,
-    RpcModule,
 };
-use lazy_static::lazy_static;
 use serde_json::Value;
-use std::{borrow::Cow, sync::Arc};
-use tokio::net::{TcpListener, TcpStream};
-use tokio_tungstenite::{accept_async, tungstenite::protocol::Message};
+use std::{borrow::Cow};
 
 pub type Error = Box<dyn std::error::Error>;
 
@@ -43,15 +37,6 @@ impl RpcServer for RpcImpl {
     fn say_hello(&self) -> RpcResult<String> {
         Ok(String::from("Hello, World!"))
     }
-}
-
-fn payload_generator() -> String {
-    let mut payload = String::new();
-    println!("Enter the payload: ");
-    std::io::stdin()
-        .read_line(&mut payload)
-        .expect("Failed to read line");
-    payload.trim().to_string()
 }
 
 pub async fn run_server() -> Result<(), Error> {
