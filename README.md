@@ -25,16 +25,20 @@ cargo run -- -c
 
 #### 4. As the client, you can send messages to the server by typing them in the terminal.
 
-#### Example:
+#### Examples:
 
 ```plaintext
-{ "jsonrpc": "2.0", "method": "say_hello", "params": "null", "id":134 }
+{ "jsonrpc": "2.0", "method": "say_hello", "params": "null", "id":1 }
+```
+
+```plaintext
+{ "jsonrpc": "2.0", "method": "add", "params": [1, 2], "id":2 }
 ```
 
 #### 5. You can exit by sending the following message as the client:
 
 ```plaintext
-{ "jsonrpc": "2.0", "method": "exit", "params": null, "id": 1 }
+{ "jsonrpc": "2.0", "method": "exit", "params": null, "id": 3 }
 ```
 
 ### Github link for jsonrpsee integration
