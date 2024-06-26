@@ -40,5 +40,3 @@ cargo run -- -c
 ```plaintext
 { "jsonrpc": "2.0", "method": "exit", "params": null, "id": 3 }
 ```
-
-### Github link for jsonrpsee integration
