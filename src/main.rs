@@ -14,7 +14,7 @@ pub type Result<T=(), E=anyhow::Error> = std::result::Result<T, E>;
 const IP_PORT: &str = "127.0.0.1:3030";
 const PROXY_IP_PORT: &str = "127.0.0.1:9999";
 lazy_static! {
-    static ref NOISE_PARAMS: NoiseParams = "Noise_XXpsk3_25519_ChaChaPoly_BLAKE2s".parse().unwrap(); //Might have to change to XK
+    static ref NOISE_PARAMS: NoiseParams = "Noise_XXpsk3_25519_ChaChaPoly_BLAKE2s".parse().expect("Parsing a constant will cause no error"); //Might have to change to XK
     static ref SECRET: [u8; 32] = *b"Random 32 characters long secret";
 }
 
@@ -137,11 +137,12 @@ async fn start_websocket_client() -> Result {
         match read.next().await {
             Some(Ok(msg)) => {
                 let len = noise.read_message(&msg.into_data(), &mut buf)?;
-                println!("Server said: {}", String::from_utf8_lossy(&buf[..len]));
-                let msg_json: Value = serde_json::from_str(&String::from_utf8_lossy(&buf[..len]))?;
-                let is_exit = match msg_json.get("result").and_then(Value::as_str) {
+                let response = String::from_utf8_lossy(&buf[..len]);
+                println!("Server said: {}", response);
+                let msg_json: Value = serde_json::from_str(&response)?;
+                let is_exit = match msg_json.get("result") {
                     Some(is_exit) => is_exit == "exit",
-                    None => bail!("Invalid method"),
+                    None => bail!("Invalid result: {:?}", response),
                 };
                 if is_exit {
                     break;
