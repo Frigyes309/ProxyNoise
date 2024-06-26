@@ -963,6 +963,7 @@ dependencies = [
 name = "noise_calls_pure_rpsee"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "futures",
  "futures-util",
  "jsonrpsee",

@@ -1,12 +1,15 @@
 mod local_server;
 
+use anyhow::{bail, Context};
 use futures_util::{SinkExt, StreamExt};
 use lazy_static::lazy_static;
+use serde_json::Value;
 use snow::{params::NoiseParams, Builder};
 use tokio::net::TcpListener;
 use tokio_tungstenite::{accept_async, connect_async, tungstenite::protocol::Message};
 
-pub type Error = Box<dyn std::error::Error>;
+pub type Result<T=(), E=anyhow::Error> = std::result::Result<T, E>;
+//pub type Error = Box<dyn std::error::Error>;
 
 const IP_PORT: &str = "127.0.0.1:3030";
 const PROXY_IP_PORT: &str = "127.0.0.1:9999";
@@ -37,113 +40,126 @@ fn create_json(response: String, msg_id: &str) -> String {
     json
 }
 
-async fn handle_connection(stream: tokio::net::TcpStream) {
-    let ws_stream = match accept_async(stream).await {
-        Ok(ws_stream) => ws_stream,
-        Err(e) => {
-            eprintln!("Failed to accept WebSocket connection: {:?}", e);
-            return;
-        }
-    };
+async fn handle_connection(stream: tokio::net::TcpStream) -> Result {
+    let ws_stream = accept_async(stream).await.context("Failed to accept WebSocket connection")?;
     let (mut write, mut read) = ws_stream.split();
 
     let builder = Builder::new(NOISE_PARAMS.clone());
-    let static_key = builder.generate_keypair().unwrap().private;
+    let static_key = builder.generate_keypair()?.private;
     let mut noise = builder
-        .local_private_key(&static_key)
-        .unwrap()
-        .psk(3, &SECRET.clone())
-        .unwrap()
-        .build_responder()
-        .unwrap();
+        .local_private_key(&static_key)?
+        .psk(3, &SECRET.clone())?
+        .build_responder()?;
     let mut buf = vec![0u8; 65535];
 
     // <- e
-    let msg = read.next().await.unwrap().unwrap();
-    noise.read_message(&msg.into_data(), &mut buf).unwrap();
+    let msg = match read.next().await {
+        Some(Ok(msg)) => msg,
+        Some(Err(e)) => bail!("Websocket error: {:?}", e),
+        None => bail!("Handshake failed on receiving information"),
+    };
+    noise.read_message(&msg.into_data(), &mut buf)?;
 
     // -> e, ee, s, es
-    let len = noise.write_message(&[], &mut buf).unwrap();
-    write.send(Message::binary(&buf[..len])).await.unwrap();
+    let len = noise.write_message(&[], &mut buf)?;
+    write.send(Message::binary(&buf[..len])).await?;
 
     // <- s, se
-    let msg = read.next().await.unwrap().unwrap();
-    noise.read_message(&msg.into_data(), &mut buf).unwrap();
+    let msg = match read.next().await {
+        Some(Ok(msg)) => msg,
+        Some(Err(e)) => bail!("Websocket error: {:?}", e),
+        None => bail!("Handshake failed on receiving information"),
+    };
+    noise.read_message(&msg.into_data(), &mut buf)?;
 
-    let mut noise = noise.into_transport_mode().unwrap();
-    let stop = false;
+    let mut noise = noise.into_transport_mode()?;
+    println!("Session established...");
 
-    while !stop {
-        if let Some(msg) = read.next().await {
-            let msg = msg.unwrap();
-            let len = noise.read_message(&msg.into_data(), &mut buf).unwrap();
-            let msg = String::from_utf8_lossy(&buf[..len]);
-            let (response, msg_id) = local_server::run_client(PROXY_IP_PORT, msg).await.unwrap();
-            println!("MsgId: {:?}", msg_id);
-            let response = create_json(response, &msg_id);
-            let len = noise.write_message(response.as_bytes(), &mut buf).unwrap();
-            write.send(Message::binary(&buf[..len])).await.unwrap();
-            println!("Answer sent.");
+    loop {
+        match read.next().await {
+            Some(Ok(msg)) => {
+                let len = noise.read_message(&msg.into_data(), &mut buf)?;
+                let msg = String::from_utf8_lossy(&buf[..len]);
+                let (response, msg_id) = local_server::run_client(PROXY_IP_PORT, msg).await?;
+
+                let response = create_json(response, &msg_id);
+                let len = noise.write_message(response.as_bytes(), &mut buf)?;
+                write.send(Message::binary(&buf[..len])).await?;
+            }
+            Some(Err(e)) => {
+                eprintln!("Websocket error: {:?}", e);
+                break;
+            }
+            None => { break; }
         }
     }
     println!("Connection closed.");
+    Ok(())
 }
 
-async fn start_websocket_client() {
+async fn start_websocket_client() -> Result {
     let url = format!("ws://{}", IP_PORT);
-    let (mut write, mut read) = match connect_async(&url).await {
-        Ok((ws_stream, _)) => ws_stream.split(),
-        Err(e) => {
-            eprintln!("Failed to connect: {:?}", e);
-            return;
-        }
-    };
+    let (ws_stream, _response) = connect_async(&url).await.context("Failed to connect")?;
+    let (mut write, mut read) = ws_stream.split();
 
     let builder = Builder::new(NOISE_PARAMS.clone());
-    let static_key = builder.generate_keypair().unwrap().private;
+    let static_key = builder.generate_keypair()?.private;
     let mut noise = builder
-        .local_private_key(&static_key)
-        .unwrap()
-        .psk(3, &SECRET.clone())
-        .unwrap()
-        .build_initiator()
-        .unwrap();
+        .local_private_key(&static_key)?
+        .psk(3, &SECRET.clone())?
+        .build_initiator()?;
     let mut buf = vec![0u8; 65535];
 
     // -> e
-    let len = noise.write_message(&[], &mut buf).unwrap();
-    write.send(Message::binary(&buf[..len])).await.unwrap();
+    let len = noise.write_message(&[], &mut buf)?;
+    write.send(Message::binary(&buf[..len])).await?;
 
     // <- e, ee, s, es
-    let msg = read.next().await.unwrap().unwrap();
-    noise.read_message(&msg.into_data(), &mut buf).unwrap();
+    let msg: Message = match read.next().await {
+        Some(Ok(msg)) => msg,
+        Some(Err(e)) => bail!("Websocket error: {:?}", e),
+        None => bail!("Handshake failed on receiving information"),
+    };
+    noise.read_message(&msg.into_data(), &mut buf)?;
 
     // -> s, se
-    let len = noise.write_message(&[], &mut buf).unwrap();
-    write.send(Message::binary(&buf[..len])).await.unwrap();
+    let len = noise.write_message(&[], &mut buf)?;
+    write.send(Message::binary(&buf[..len])).await?;
 
-    let mut noise = noise.into_transport_mode().unwrap();
+    let mut noise = noise.into_transport_mode()?;
     println!("Session established...");
 
     let msg = payload_generator();
-    let len = noise.write_message(&(msg.as_bytes()), &mut buf).unwrap();
-    write.send(Message::binary(&buf[..len])).await.unwrap();
+    let len = noise.write_message(&(msg.as_bytes()), &mut buf)?;
+    write.send(Message::binary(&buf[..len])).await?;
 
     loop {
-        if let Some(msg) = read.next().await {
-            let msg = msg.unwrap();
-            let len = noise.read_message(&msg.into_data(), &mut buf).unwrap();
-            if String::from_utf8_lossy(&buf[..len]).eq("exit") {
+        match read.next().await {
+            Some(Ok(msg)) => {
+                let len = noise.read_message(&msg.into_data(), &mut buf)?;
+                println!("Server said: {}", String::from_utf8_lossy(&buf[..len]));
+                let msg_json: Value = serde_json::from_str(&String::from_utf8_lossy(&buf[..len]))?;
+                let is_exit = match msg_json.get("result").and_then(Value::as_str) {
+                    Some(is_exit) => is_exit == "exit",
+                    None => bail!("Invalid method"),
+                };
+                if is_exit {
+                    break;
+                }
+
+                let msg = payload_generator();
+                let len = noise.write_message(&(msg.as_bytes()), &mut buf)?;
+                write.send(Message::binary(&buf[..len])).await?;
+            }
+            Some(Err(e)) => {
+                eprintln!("Websocket error: {:?}", e);
                 break;
             }
-            println!("Server said: {}", String::from_utf8_lossy(&buf[..len]));
-
-            let msg = payload_generator();
-            let len = noise.write_message(&(msg.as_bytes()), &mut buf).unwrap();
-            write.send(Message::binary(&buf[..len])).await.unwrap();
+            None => { break; }
         }
     }
     println!("Connection closed.");
+    Ok(())
 }
 
 fn payload_generator() -> String {
@@ -176,15 +192,12 @@ async fn main() {
         std::io::stdin()
             .read_line(&mut input)
             .expect("Failed to read line");
-        server_mode = if 's' == input.trim().chars().next().unwrap() {
-            0
-        } else if 'p' == input.trim().chars().next().unwrap() {
-            1
-        } else if 'c' == input.trim().chars().next().unwrap() {
-            2
-        } else {
-            4
-        };
+        server_mode = match input.trim().chars().next() {
+            Some('s') => 0,
+            Some('p') => 1,
+            Some('c') => 2,
+            _ => 4,
+        }
     }
     if server_mode == 0 {
         println!("Server mode");
@@ -195,7 +208,10 @@ async fn main() {
         println!("Proxy mo2de");
     } else if server_mode == 2 {
         println!("Client mode");
-        start_websocket_client().await;
+        match start_websocket_client().await {
+            Err(e) => eprintln!("Error: {:?}", e),
+            _ => (),
+        }
     } else {
         println!("Invalid mode");
     }

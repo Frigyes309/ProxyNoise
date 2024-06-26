@@ -6,8 +6,10 @@ use jsonrpsee::{
 };
 use serde_json::Value;
 use std::{borrow::Cow};
+use anyhow::bail;
 
-pub type Error = Box<dyn std::error::Error>;
+//pub type Error = Box<dyn std::error::Error>;
+pub type Result<T=(), E=anyhow::Error> = std::result::Result<T, E>;
 
 const PROXY_IP_PORT: &str = "127.0.0.1:9999";
 
@@ -39,7 +41,7 @@ impl RpcServer for RpcImpl {
     }
 }
 
-pub async fn run_server() -> Result<(), Error> {
+pub async fn run_server() -> Result {
     let server = ServerBuilder::default()
         .ws_only()
         .build(PROXY_IP_PORT)
@@ -52,7 +54,7 @@ pub async fn run_server() -> Result<(), Error> {
     Ok(())
 }
 
-pub async fn run_client(ip_port: &str, msg: Cow<'_, str>) -> Result<(String, String), Error> {
+pub async fn run_client(ip_port: &str, msg: Cow<'_, str>) -> Result<(String, String), anyhow::Error> {
     let url = format!("ws://{}", ip_port);
     let client = WsClientBuilder::new().build(&url).await?;
 
@@ -66,19 +68,34 @@ pub async fn run_client(ip_port: &str, msg: Cow<'_, str>) -> Result<(String, Str
     );
 
     let msg_json: Value = serde_json::from_str(&msg)?;
-    let method = msg_json
-        .get("method")
-        .and_then(Value::as_str)
-        .ok_or("error")?;
-    let id = msg_json.get("id").ok_or("error")?.to_string();
+    let method = match msg_json.get("method").and_then(Value::as_str) {
+        Some(method) => method,
+        None => bail!("Invalid method"),
+    };
+    let id = match msg_json.get("id") {
+        Some(id) => id.to_string(),
+        None => bail!("Invalid id"),
+    };
     let answer = match method {
         "add" => {
-            let params = msg_json.get("params").unwrap().as_array().unwrap();
-            let a = params[0].as_i64().unwrap();
-            let b = params[1].as_i64().unwrap();
+            let params = match msg_json.get("params") {
+                Some(params) => match params.as_array() {
+                    Some(params) => params,
+                    None => bail!("Invalid parameters"),
+                },
+                None => bail!("Invalid parameters"),
+            };
+            let a = match params[0].as_i64() {
+                Some(a) => a,
+                None => bail!("Invalid first parameter"),
+            };
+            let b = match params[1].as_i64() {
+                Some(b) => b,
+                None => bail!("Invalid second parameter"),
+            };
             let response: Value = client.request("add", jsonrpsee::rpc_params![a, b]).await?;
             println!("add response (for {}+{}): {}", a, b, response);
-            Ok::<(String, String), Error>((response.to_string(), id))
+            Ok::<(String, String), anyhow::Error>((response.to_string(), id))
         }
         "exit" => {
             let response: Value = client.request("exit", jsonrpsee::rpc_params![]).await?;

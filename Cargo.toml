@@ -14,3 +14,4 @@ futures = "0.3.30"
 snow = { path = "../../snow" }
 jsonrpsee = {version = "0.23.1", features = ["client", "jsonrpsee-core", "full"]}
 serde_json = { version = "1.0.117" }
+anyhow = "1.0.86"
