@@ -28,7 +28,7 @@ cargo run -- -c
 #### Example:
 
 ```plaintext
-{ "jsonrpc": "2.0", "method": "add", "params": [42, 23], "id": 1 }
+{ "jsonrpc": "2.0", "method": "say_hello", "params": "null", "id":134 }
 ```
 
 #### 5. You can exit by sending the following message as the client:
