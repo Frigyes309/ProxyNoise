@@ -1,0 +1,25 @@
+[package]
+name = "main"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+snow = { path = "C:\\HDD\\DLabs\\noise\\res\\snow" }
+anyhow = {version = "1.0.86"}
+lazy_static = {version = "1.5.0"}
+wasm-bindgen = { version = "0.2.76", features = ["serde-serialize"] }
+js-sys = {version = "0.3.50"}
+serde_json = { version = "1.0.68" }
+serde-wasm-bindgen = { version = "0.6.5" }
+
+tokio-tungstenite = { version = "0.23.1"}
+
+
+futures-util = {version = "0.3.30"}
+tokio = {version ="1.39.2"}
+futures = {version = "0.3.30"}
+jsonrpsee = {version = "0.24.2", features = ["client", "jsonrpsee-core", "full"]}
+
+potato = { path = "../../", features = ["client"] }
