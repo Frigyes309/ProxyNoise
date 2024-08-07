@@ -16,6 +16,9 @@ serde-wasm-bindgen = { version = "0.6.5" }
 
 tokio-tungstenite = { version = "0.23.1"}
 
+# Needed for serialization
+getrandom = { version = "0.2", features = ["js"] }
+
 [features]
 client = []
 
