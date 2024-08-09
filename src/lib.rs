@@ -5,7 +5,9 @@ use snow::Builder;
 use crate::NoiseHandshake::{SentEphemeralPublicKey, WaitingForConnection};
 use NoiseHandshake::*;
 use std::fmt;
-type ResultHandler = Result<(NoiseHandshake, JsValue), anyhow::Error>;
+
+// type ResultHandler = Result<(NoiseHandshake, JsValue), anyhow::Error>;
+type ResultHandler = Result<JsValue, NoiseError>;
 
 lazy_static! {
     static ref NOISE_PARAMS: NoiseParams = "Noise_XKpsk3_25519_ChaChaPoly_BLAKE2s"
@@ -13,6 +15,7 @@ lazy_static! {
         .expect("Parsing a constant will cause no error");
 }
 
+#[derive(Debug)]
 enum NoiseHandshake {
     WaitingForConnection,
     ReceivedPublicStaticKey,
@@ -48,55 +51,51 @@ impl NoiseClient for Handshaker {
     fn initiator_start_handshake(&mut self) -> ResultHandler {
         let len = self.noise.write_message(&[], &mut self.buf)?;
         let msg = match serde_wasm_bindgen::to_value(&self.buf[..len]) {
-            Ok(msg) => msg,
-            Err(e) => todo!("Error: {:?}", e),
+            Ok(x) => x,
+            Err(e) => NoiseError::OtherError(format!("Serialization error: {:?}", e)).into(),
         };
-        Ok((SentEphemeralPublicKey, msg))
+        Ok(msg)
     }
 
     fn initiator_second_phase(&mut self, msg: String) -> ResultHandler {
         self.noise.read_message(&msg.as_bytes(), &mut self.buf)?;
         let msg = match serde_wasm_bindgen::to_value("") {
             Ok(msg) => msg,
-            Err(e) => todo!("Error: {:?}", e),
+            Err(e) => NoiseError::OtherError(format!("Serialization error: {:?}", e)).into(),
         };
-        Ok((ReceivedEphemeralPublicKey, msg))
+        Ok(msg)
     }
 
     fn initiator_third_phase(&mut self) -> ResultHandler {
         let len = self.noise.write_message(&[], &mut self.buf)?;
         let msg = match serde_wasm_bindgen::to_value(&self.buf[..len]) {
             Ok(msg) => msg,
-            Err(e) => todo!("Error: {:?}", e),
+            Err(e) => NoiseError::OtherError(format!("Serialization error: {:?}", e)).into(),
         };
-        Ok((HandshakeCompleted, msg))
+        Ok(msg)
     }
 
     fn initiator_send_request(&mut self) -> ResultHandler {
         let len = self.noise.write_message(&[], &mut self.buf)?;
         let msg = match serde_wasm_bindgen::to_value(&self.buf[..len]) {
             Ok(msg) => msg,
-            Err(e) => todo!("Error: {:?}", e),
+            Err(e) => NoiseError::OtherError(format!("Serialization error: {:?}", e)).into(),
         };
-        Ok((HandshakeCompleted, msg))
+        Ok(msg)
     }
 
     fn initiator_handle_response(&mut self, msg: String) -> ResultHandler {
-        // let start_len = self.buf.len();
         let len = self.noise.read_message(&msg.as_bytes(), &mut self.buf)?;
-        let msg = &self.buf[..len];
-        // print!("Startlen: {:?}\nLen: {:?}", start_len, len);
-        let msg = match serde_wasm_bindgen::to_value(msg) {
+        let msg = match serde_wasm_bindgen::to_value(&self.buf[..len]) {
             Ok(msg) => msg,
-            Err(e) => todo!("Error: {:?}", e),
+            Err(e) => NoiseError::OtherError(format!("Serialization error: {:?}", e)).into(),
         };
-        Ok((ReceivedEphemeralPublicKey, msg))
+        Ok(msg)
     }
 }
 
 #[wasm_bindgen(js_class = NoiseStateMachine)]
 impl NoiseStateMachine {
-
     #[wasm_bindgen(constructor)]
     pub fn new_init(
         role: bool,
@@ -104,13 +103,13 @@ impl NoiseStateMachine {
         callback_down: js_sys::Function,
         server_static_key: Vec<u8>,
     ) -> Result<NoiseStateMachine, JsValue> {
-        let builder = Builder::new(NOISE_PARAMS.clone());
-        let builder = builder.remote_public_key(&server_static_key).map_err(NoiseError::from)?;
+        let builder = Builder::new(NOISE_PARAMS.clone())
+            .remote_public_key(&server_static_key);
         let static_key = builder.generate_keypair().map_err(NoiseError::from)?.private;
         let secret: [u8; 32] = *b"Random 32 characters long secret";
         let noise: HandshakeState = builder
-            .local_private_key(&static_key).map_err(NoiseError::from)?
-            .psk(3, &secret).map_err(NoiseError::from)?
+            .local_private_key(&static_key)
+            .psk(3, &secret)
             .build_initiator().map_err(NoiseError::from)?;
         let mut buf: Vec<u8> = vec![0u8; 65535];
         let mut handshaker = Handshaker {
@@ -123,9 +122,9 @@ impl NoiseStateMachine {
             let msg = serde_wasm_bindgen::to_value(&handshaker.buf[..len])
                 .map_err(|e| JsValue::from_str(&format!("Serialization error: {:?}", e)))?;
             callback_down.call1(&JsValue::NULL, &msg)?;
-            NoiseHandshake::SentEphemeralPublicKey
+            SentEphemeralPublicKey
         } else {
-            NoiseHandshake::WaitingForConnection
+            WaitingForConnection
         };
 
         Ok(NoiseStateMachine {
@@ -136,64 +135,65 @@ impl NoiseStateMachine {
             down_func: callback_down,
         })
     }
-    
+
     // send mode is true if the message is to be sent to the server from the client
     #[wasm_bindgen(js_name = handleConnection)]
-    pub fn handle_connection(&mut self, msg: Option<String>, send_mode: bool) -> () {
+    pub fn handle_connection(&mut self, msg: Option<String>, send_mode: bool) {
         if self.role {
             match self.state {
                 WaitingForConnection => {
-                    let (new_state, msg) = match self.handshaker.initiator_start_handshake() {
-                        Ok((new_state, msg)) => (new_state, msg),
-                        Err(e) => todo!("Error: {:?}", e),
+                    let msg = match self.handshaker.initiator_start_handshake() {
+                        Ok(msg) => msg,
+                        Err(e) => NoiseError::InitiationSendError(format!("Error: {:?}", e)).into(),
                     };
                     let _ = self.down_func.call1(&JsValue::NULL, &msg);
-                    self.state = new_state;
+                    self.state = SentEphemeralPublicKey;
                 }
                 SentEphemeralPublicKey => {
                     let msg = match msg {
                         Some(msg) => msg,
-                        None => todo!("No message received"),
+                        None => NoiseError::OtherError("No message received".to_string()).into(),
                     };
-                    let (new_state, _msg) = match self.handshaker.initiator_second_phase(msg) {
-                        Ok((new_state, msg)) => (new_state, msg),
-                        Err(e) => todo!("Error: {:?}", e),
+                    let _msg = match self.handshaker.initiator_second_phase(msg) {
+                        Ok(msg) => msg,
+                        Err(e) => NoiseError::InitiationSendError(format!("Error: {:?}", e)).into(),
                     };
-                    self.state = new_state;
+                    self.state = ReceivedEphemeralPublicKey;
                     self.handle_connection(None, true);
                 }
                 ReceivedEphemeralPublicKey => {
-                    let (new_state, msg) = match self.handshaker.initiator_third_phase() {
-                        Ok((new_state, msg)) => (new_state, msg),
-                        Err(e) => todo!("Error: {:?}", e),
+                    let msg = match self.handshaker.initiator_third_phase() {
+                        Ok(msg) => msg,
+                        Err(e) => NoiseError::InitiationSendError(format!("Error: {:?}", e)).into(),
                     };
                     let _ = self.down_func.call1(&JsValue::NULL, &msg);
-                    self.state = new_state;
+                    self.state = HandshakeCompleted;
                 }
 
                 HandshakeCompleted => {
                     if send_mode {
-                        let (new_state, msg) = match self.handshaker.initiator_send_request() {
-                            Ok((new_state, msg)) => (new_state, msg),
-                            Err(e) => todo!("Error: {:?}", e),
+                        let msg = match self.handshaker.initiator_send_request() {
+                            Ok(msg) => msg,
+                            Err(e) => NoiseError::OtherError(format!("Error: {:?}", e)).into(),
                         };
                         let _ = self.down_func.call1(&JsValue::NULL, &msg);
-                        self.state = new_state;
                     } else {
                         let msg = match msg {
                             Some(msg) => msg,
-                            None => todo!("No message received"),
+                            None => NoiseError::OtherError(format!("No message received$")).into(),
                         };
-                        let (new_state, msg) =
+                        let msg =
                             match self.handshaker.initiator_handle_response(msg) {
-                                Ok((new_state, msg)) => (new_state, msg),
-                                Err(e) => todo!("Error: {:?}", e),
+                                Ok(msg) => msg,
+                                Err(e) => NoiseError::OtherError(format!("Error: {:?}", e)).into(),
                             };
                         let _ = self.up_func.call1(&JsValue::NULL, &msg);
-                        self.state = new_state;
                     }
                 }
-                _ => todo!("Invalid state"),
+                _ => {
+                    // let error_msg = NoiseError::InvalidStateError("Invalid state".to_string()).to_string();
+                    // eprint!(&error_msg);
+                }
             }
         }else {
                 // #[cfg(feature = "server")]
@@ -229,7 +229,9 @@ impl NoiseStateMachine {
 pub enum NoiseError {
     SnowError(snow::Error),
     SerdeError(serde_wasm_bindgen::Error),
+    InitiationSendError(String),
     OtherError(String),
+    InvalidStateError(String),
 }
 
 impl fmt::Display for NoiseError {
@@ -237,6 +239,8 @@ impl fmt::Display for NoiseError {
         match self {
             NoiseError::SnowError(e) => write!(f, "Snow error: {}", e),
             NoiseError::SerdeError(e) => write!(f, "Snow error: {}", e),
+            NoiseError::InitiationSendError(e) => write!(f, "Initiation error: {:?}", e),
+            NoiseError::InvalidStateError(e) => write!(f, "Invalid state error: {}", e),
             NoiseError::OtherError(e) => write!(f, "Other error: {}", e),
         }
     }
@@ -250,13 +254,24 @@ impl From<snow::Error> for NoiseError {
     }
 }
 
+impl From<JsValue> for NoiseError {
+    fn from(error: JsValue) -> NoiseError {
+        NoiseError::InitiationSendError(format!("{:?}", error))
+    }
+}
+
+impl Into<String> for NoiseError {
+    fn into(self) -> String {
+        self.to_string()
+    }
+}
+
 impl From<NoiseError> for JsValue {
     fn from(error: NoiseError) -> JsValue {
         JsValue::from_str(&error.to_string())
     }
 }
 
-// pub enum Message {
 //     Text(String),
 //     Binary(Vec<u8>),
 // }

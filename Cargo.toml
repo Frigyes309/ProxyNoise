@@ -6,21 +6,21 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-snow = { path = "C:\\HDD\\DLabs\\noise\\res\\snow" }
-anyhow = {version = "1.0.86"}
-lazy_static = {version = "1.5.0"}
+#snow = { path = "C:\\HDD\\DLabs\\noise\\res\\snow" }
+snow = { version = "0.9.6" }
+anyhow = { version = "1.0.86" }
+lazy_static = { version = "1.5.0" }
 wasm-bindgen = { version = "0.2.76", features = ["serde-serialize"] }
-js-sys = {version = "0.3.50"}
+js-sys = { version = "0.3.50" }
 serde_json = { version = "1.0.68" }
 serde-wasm-bindgen = { version = "0.6.5" }
-
-tokio-tungstenite = { version = "0.23.1"}
+tokio-tungstenite = { version = "0.23.1" }
 
 # Needed for serialization
 getrandom = { version = "0.2", features = ["js"] }
 
-[features]
-client = []
+#[features]
+#client = []
 
 [lib]
 crate-type = ["cdylib"]
