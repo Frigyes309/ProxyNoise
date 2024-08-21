@@ -14,13 +14,12 @@ wasm-bindgen = { version = "0.2.76", features = ["serde-serialize"] }
 js-sys = { version = "0.3.50" }
 serde_json = { version = "1.0.68" }
 serde-wasm-bindgen = { version = "0.6.5" }
-tokio-tungstenite = { version = "0.23.1" }
 
 # Needed for serialization
 getrandom = { version = "0.2", features = ["js"] }
 
-#[features]
-#client = []
+[features]
+js = []
 
 [lib]
 crate-type = ["cdylib"]

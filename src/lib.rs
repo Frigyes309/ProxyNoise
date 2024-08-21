@@ -25,9 +25,10 @@ enum NoiseHandshake {
     HandshakeCompleted,
 }
 
+/// true for client, false for server
 #[wasm_bindgen(js_name = NoiseStateMachine)]
 struct NoiseStateMachine {
-    role: bool, //true for client, false for server
+    role: bool, 
     state: NoiseHandshake,
     handshaker: Handshaker,
     up_func: js_sys::Function,
@@ -136,7 +137,7 @@ impl NoiseStateMachine {
         })
     }
 
-    // send mode is true if the message is to be sent to the server from the client
+    /// send mode is true if the message is to be sent to the server from the client
     #[wasm_bindgen(js_name = handleConnection)]
     pub fn handle_connection(&mut self, msg: Option<String>, send_mode: bool) {
         if self.role {
@@ -195,7 +196,7 @@ impl NoiseStateMachine {
                     // eprint!(&error_msg);
                 }
             }
-        }else {
+        } else {
                 // #[cfg(feature = "server")]
                 /*match self.state {
                     WaitingForConnection => {
