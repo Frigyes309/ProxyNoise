@@ -241,13 +241,32 @@ export class NoiseStateMachine {
     }
     /**
     * send mode is true if the message is to be sent to the server from the client
-    * @param {string | undefined} msg
+    * @param {Uint8Array | undefined} msg
     * @param {boolean} send_mode
     */
     handleConnection(msg, send_mode) {
-        var ptr0 = isLikeNone(msg) ? 0 : passStringToWasm0(msg, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        var ptr0 = isLikeNone(msg) ? 0 : passArray8ToWasm0(msg, wasm.__wbindgen_malloc);
         var len0 = WASM_VECTOR_LEN;
         wasm.noisestatemachine_handleConnection(this.__wbg_ptr, ptr0, len0, send_mode);
+    }
+    /**
+    * @returns {string}
+    */
+    getHandshakestate() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+            wasm.noisestatemachine_getHandshakestate(retptr, this.__wbg_ptr);
+            var r0 = getInt32Memory0()[retptr / 4 + 0];
+            var r1 = getInt32Memory0()[retptr / 4 + 1];
+            deferred1_0 = r0;
+            deferred1_1 = r1;
+            return getStringFromWasm0(r0, r1);
+        } finally {
+            wasm.__wbindgen_add_to_stack_pointer(16);
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
     }
 }
 

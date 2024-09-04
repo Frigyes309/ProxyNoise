@@ -1,4 +1,8 @@
 /target
-/examples/connection/target
+/examples
 /web/dist
 /web/node_modules
+/enviroment
+/pkg
+/idea
+/node_modules

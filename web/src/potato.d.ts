@@ -14,10 +14,14 @@ export class NoiseStateMachine {
   constructor(role: boolean, callback_up: Function, callback_down: Function, server_static_key: Uint8Array);
 /**
 * send mode is true if the message is to be sent to the server from the client
-* @param {string | undefined} msg
+* @param {Uint8Array | undefined} msg
 * @param {boolean} send_mode
 */
-  handleConnection(msg: string | undefined, send_mode: boolean): void;
+  handleConnection(msg: Uint8Array | undefined, send_mode: boolean): void;
+/**
+* @returns {string}
+*/
+  getHandshakestate(): string;
 }
 
 export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
@@ -27,9 +31,11 @@ export interface InitOutput {
   readonly __wbg_noisestatemachine_free: (a: number) => void;
   readonly noisestatemachine_new_init: (a: number, b: number, c: number, d: number, e: number, f: number) => void;
   readonly noisestatemachine_handleConnection: (a: number, b: number, c: number, d: number) => void;
+  readonly noisestatemachine_getHandshakestate: (a: number, b: number) => void;
   readonly __wbindgen_malloc: (a: number, b: number) => number;
   readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
   readonly __wbindgen_add_to_stack_pointer: (a: number) => number;
+  readonly __wbindgen_free: (a: number, b: number, c: number) => void;
   readonly __wbindgen_exn_store: (a: number) => void;
 }
 

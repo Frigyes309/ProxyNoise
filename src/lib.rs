@@ -1,5 +1,5 @@
 use lazy_static::lazy_static;
-use snow::{params::NoiseParams, HandshakeState};
+use snow::{params::NoiseParams, HandshakeState, TransportState};
 use wasm_bindgen::prelude::*;
 use snow::Builder;
 use crate::NoiseHandshake::{SentEphemeralPublicKey, WaitingForConnection};
@@ -37,10 +37,10 @@ struct NoiseStateMachine {
 
 trait NoiseClient {
     fn initiator_start_handshake(&mut self) -> ResultHandler;
-    fn initiator_second_phase(&mut self, msg: String) -> ResultHandler;
+    fn initiator_second_phase(&mut self, msg: Vec<u8>) -> ResultHandler;
     fn initiator_third_phase(&mut self) -> ResultHandler;
     fn initiator_send_request(&mut self) -> ResultHandler;
-    fn initiator_handle_response(&mut self, msg: String) -> ResultHandler;
+    fn initiator_handle_response(&mut self, msg: Vec<u8>) -> ResultHandler;
 }
 
 struct Handshaker {
@@ -58,8 +58,8 @@ impl NoiseClient for Handshaker {
         Ok(msg)
     }
 
-    fn initiator_second_phase(&mut self, msg: String) -> ResultHandler {
-        self.noise.read_message(&msg.as_bytes(), &mut self.buf)?;
+    fn initiator_second_phase(&mut self, msg: Vec<u8>) -> ResultHandler {
+        self.noise.read_message(&msg, &mut self.buf)?;
         let msg = match serde_wasm_bindgen::to_value("") {
             Ok(msg) => msg,
             Err(e) => NoiseError::OtherError(format!("Serialization error: {:?}", e)).into(),
@@ -85,14 +85,14 @@ impl NoiseClient for Handshaker {
         Ok(msg)
     }
 
-    fn initiator_handle_response(&mut self, msg: String) -> ResultHandler {
-        let len = self.noise.read_message(&msg.as_bytes(), &mut self.buf)?;
+    fn initiator_handle_response(&mut self, msg: Vec<u8>) -> ResultHandler {
+        let len = self.noise.read_message(&msg, &mut self.buf)?;
         let msg = match serde_wasm_bindgen::to_value(&self.buf[..len]) {
             Ok(msg) => msg,
             Err(e) => NoiseError::OtherError(format!("Serialization error: {:?}", e)).into(),
         };
         Ok(msg)
-    }
+    } 
 }
 
 #[wasm_bindgen(js_class = NoiseStateMachine)]
@@ -112,25 +112,15 @@ impl NoiseStateMachine {
             .local_private_key(&static_key)
             .psk(3, &secret)
             .build_initiator().map_err(NoiseError::from)?;
-        let mut buf: Vec<u8> = vec![0u8; 65535];
-        let mut handshaker = Handshaker {
+        let buf: Vec<u8> = vec![0u8; 65535];
+        let handshaker = Handshaker {
             noise,
             buf: buf.clone(),
         };
 
-        let state = if role {
-            let len = handshaker.noise.write_message(&[], &mut buf).map_err(NoiseError::from)?;
-            let msg = serde_wasm_bindgen::to_value(&handshaker.buf[..len])
-                .map_err(|e| JsValue::from_str(&format!("Serialization error: {:?}", e)))?;
-            callback_down.call1(&JsValue::NULL, &msg)?;
-            SentEphemeralPublicKey
-        } else {
-            WaitingForConnection
-        };
-
         Ok(NoiseStateMachine {
             role,
-            state,
+            state: NoiseHandshake::WaitingForConnection,
             handshaker,
             up_func: callback_up,
             down_func: callback_down,
@@ -139,7 +129,7 @@ impl NoiseStateMachine {
 
     /// send mode is true if the message is to be sent to the server from the client
     #[wasm_bindgen(js_name = handleConnection)]
-    pub fn handle_connection(&mut self, msg: Option<String>, send_mode: bool) {
+    pub fn handle_connection(&mut self, msg: Option<Vec<u8>>, send_mode: bool) {
         if self.role {
             match self.state {
                 WaitingForConnection => {
@@ -169,8 +159,8 @@ impl NoiseStateMachine {
                     };
                     let _ = self.down_func.call1(&JsValue::NULL, &msg);
                     self.state = HandshakeCompleted;
+                    // self.handshaker.transport = self.handshaker.noise.into_transport_mode();
                 }
-
                 HandshakeCompleted => {
                     if send_mode {
                         let msg = match self.handshaker.initiator_send_request() {
@@ -224,6 +214,11 @@ impl NoiseStateMachine {
                 }*/
             }
     }
+
+    #[wasm_bindgen(js_name = getHandshakestate)]
+    pub fn getHandshakestate(&self) -> String {
+        format!("{:?}", self.state)
+    }
 }
 
 #[derive(Debug)]
@@ -261,9 +256,9 @@ impl From<JsValue> for NoiseError {
     }
 }
 
-impl Into<String> for NoiseError {
-    fn into(self) -> String {
-        self.to_string()
+impl Into<Vec<u8>> for NoiseError {
+    fn into(self) -> Vec<u8> {
+        self.to_string().as_bytes().to_vec()
     }
 }
 
