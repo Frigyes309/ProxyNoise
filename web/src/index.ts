@@ -35,8 +35,8 @@ socket.onclose = (event: CloseEvent) => {
 
 async function main() {
     const server_static_key = new Uint8Array([
-        173, 210, 61, 112, 244, 241, 202, 59, 254, 157, 42, 28, 62, 238, 52, 55, 231, 32, 44, 216,
-        48, 97, 137, 118, 251, 39, 191, 180, 36, 148, 246, 21,
+        181, 98, 220, 5, 213, 251, 229, 176, 29, 249, 159, 24, 126, 72, 126, 146, 184, 89, 43, 181,
+        155, 51, 158, 140, 90, 143, 230, 213, 30, 192, 80, 122,
     ]);
     noise = new NoiseStateMachine(true, upFunction, downFunction, server_static_key);
 
